@@ -13,6 +13,7 @@ def app():
         {
             "TESTING": True,
             "SQLALCHEMY_DATABASE_URI": "sqlite://",
+            "API_AUTH_TOKEN": "test-token",
         }
     )
 
