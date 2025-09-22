@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  umbra_player_service:
+    build: .
+    ports:
+      - "5001:5001"
+    environment:
+      - DATABASE_URL=postgresql://umbra_player_service:dev_password@postgres:5432/umbra_player_service
+      - REDIS_URL=redis://redis:6379/0
+      - FLASK_ENV=development
+      - FLASK_DEBUG=1
+      - PORT=5001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+    command: python -m src.main
+
+  postgres:
+    image: postgres:15
+    environment:
+      - POSTGRES_USER=umbra_player_service
+      - POSTGRES_PASSWORD=dev_password
+      - POSTGRES_DB=umbra_player_service
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U umbra_player_service"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:
