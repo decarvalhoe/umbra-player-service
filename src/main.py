@@ -42,6 +42,26 @@ def create_app() -> Flask:
             status,
         )
 
+    def _extract_bearer_token() -> str:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            return auth_header.split(" ", 1)[1].strip()
+        return ""
+
+    def _require_authentication():
+        expected_token = app.config.get("API_AUTH_TOKEN")
+        token = _extract_bearer_token()
+
+        if not expected_token or token != expected_token:
+            return False, _build_error_response(
+                message="Authentification requise.",
+                error_code="auth_invalid",
+                status=401,
+                error_message="Jeton Bearer invalide ou manquant.",
+            )
+
+        return True, None
+
     def _build_error_response(
         message: str, error_code: str, status: int, error_message: Optional[str] = None
     ):
@@ -104,20 +124,9 @@ def create_app() -> Flask:
 
     @app.route("/players/<int:player_id>", methods=["GET"])
     def get_player(player_id: int):
-        expected_token = app.config.get("API_AUTH_TOKEN")
-
-        auth_header = request.headers.get("Authorization", "")
-        token = ""
-        if auth_header.startswith("Bearer "):
-            token = auth_header.split(" ", 1)[1].strip()
-
-        if not expected_token or token != expected_token:
-            return _build_error_response(
-                message="Authentification requise.",
-                error_code="auth_invalid",
-                status=401,
-                error_message="Jeton Bearer invalide ou manquant.",
-            )
+        is_authenticated, error_response = _require_authentication()
+        if not is_authenticated:
+            return error_response
 
         player = (
             Player.query.options(joinedload(Player.stats))
@@ -135,6 +144,52 @@ def create_app() -> Flask:
         return _build_success_response(
             _serialize_player(player),
             message="Informations du joueur récupérées avec succès.",
+        )
+
+    @app.route("/players", methods=["POST"])
+    def create_player():
+        is_authenticated, error_response = _require_authentication()
+        if not is_authenticated:
+            return error_response
+
+        user_id = request.headers.get("X-User-Id")
+        if not user_id:
+            return _build_error_response(
+                message="Identifiant utilisateur requis.",
+                error_code="user_id_missing",
+                status=400,
+                error_message="L'en-tête 'X-User-Id' est requis.",
+            )
+
+        payload = request.get_json(silent=True) or {}
+        name = payload.get("name")
+        if not isinstance(name, str) or not name.strip():
+            return _build_error_response(
+                message="Nom du joueur invalide.",
+                error_code="invalid_payload",
+                status=400,
+                error_message="Le champ 'name' est requis.",
+            )
+
+        existing_player = Player.query.filter_by(user_id=user_id).first()
+        if existing_player is not None:
+            return _build_error_response(
+                message="Un joueur existe déjà pour cet utilisateur.",
+                error_code="player_already_exists",
+                status=409,
+                error_message="Un joueur est déjà associé à cet utilisateur.",
+            )
+
+        player = Player(user_id=user_id, name=name.strip())
+        player.stats = PlayerStats()
+
+        db.session.add(player)
+        db.session.commit()
+
+        return _build_success_response(
+            _serialize_player(player),
+            message="Joueur créé avec succès.",
+            status=201,
         )
 
     return app
