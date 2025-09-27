@@ -142,3 +142,114 @@ def test_create_player_success(client):
     assert payload["data"]["name"] == "Umbra Hero"
     assert payload["data"]["stats"]["health"] == 100
     assert payload["message"] == "Joueur créé avec succès."
+
+
+def test_update_player_requires_auth(client, app):
+    with app.app_context():
+        player = _create_player()
+        player_id = player.id
+
+    response = client.put(
+        f"/players/{player_id}",
+        json={"name": "New Name"},
+    )
+
+    assert response.status_code == 401
+    payload = response.get_json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "auth_invalid"
+
+
+def test_update_player_missing_user_id(client, app):
+    with app.app_context():
+        player = _create_player()
+        player_id = player.id
+
+    response = client.put(
+        f"/players/{player_id}",
+        json={"name": "New Name"},
+        headers={"Authorization": "Bearer test-token"},
+    )
+
+    assert response.status_code == 400
+    payload = response.get_json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "user_id_missing"
+
+
+def test_update_player_not_found(client):
+    response = client.put(
+        "/players/9999",
+        json={"name": "New Name"},
+        headers={
+            "Authorization": "Bearer test-token",
+            "X-User-Id": "user-unknown",
+        },
+    )
+
+    assert response.status_code == 404
+    payload = response.get_json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "player_not_found"
+
+
+def test_update_player_forbidden(client, app):
+    with app.app_context():
+        player = _create_player()
+        player_id = player.id
+
+    response = client.put(
+        f"/players/{player_id}",
+        json={"name": "New Name"},
+        headers={
+            "Authorization": "Bearer test-token",
+            "X-User-Id": "user-456",
+        },
+    )
+
+    assert response.status_code == 403
+    payload = response.get_json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "forbidden"
+
+
+def test_update_player_invalid_name(client, app):
+    with app.app_context():
+        player = _create_player()
+        player_id = player.id
+
+    response = client.put(
+        f"/players/{player_id}",
+        json={"name": "   "},
+        headers={
+            "Authorization": "Bearer test-token",
+            "X-User-Id": "user-123",
+        },
+    )
+
+    assert response.status_code == 400
+    payload = response.get_json()
+    assert payload["success"] is False
+    assert payload["error"]["code"] == "invalid_payload"
+
+
+def test_update_player_success(client, app):
+    with app.app_context():
+        player = _create_player()
+        player_id = player.id
+
+    response = client.put(
+        f"/players/{player_id}",
+        json={"name": "Umbra Legend"},
+        headers={
+            "Authorization": "Bearer test-token",
+            "X-User-Id": "user-123",
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["success"] is True
+    assert payload["data"]["id"] == player_id
+    assert payload["data"]["name"] == "Umbra Legend"
+    assert payload["message"] == "Joueur mis à jour avec succès."

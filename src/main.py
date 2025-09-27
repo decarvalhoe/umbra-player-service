@@ -192,6 +192,60 @@ def create_app() -> Flask:
             status=201,
         )
 
+    @app.route("/players/<int:player_id>", methods=["PUT"])
+    def update_player(player_id: int):
+        is_authenticated, error_response = _require_authentication()
+        if not is_authenticated:
+            return error_response
+
+        user_id = request.headers.get("X-User-Id")
+        if not user_id:
+            return _build_error_response(
+                message="Identifiant utilisateur requis.",
+                error_code="user_id_missing",
+                status=400,
+                error_message="L'en-tête 'X-User-Id' est requis.",
+            )
+
+        player = (
+            Player.query.options(joinedload(Player.stats))
+            .filter_by(id=player_id)
+            .first()
+        )
+
+        if player is None:
+            return _build_error_response(
+                message="Joueur introuvable.",
+                error_code="player_not_found",
+                status=404,
+            )
+
+        if player.user_id != user_id:
+            return _build_error_response(
+                message="Accès interdit.",
+                error_code="forbidden",
+                status=403,
+                error_message="Vous ne pouvez modifier que vos propres joueurs.",
+            )
+
+        payload = request.get_json(silent=True) or {}
+        name = payload.get("name")
+        if not isinstance(name, str) or not name.strip():
+            return _build_error_response(
+                message="Nom du joueur invalide.",
+                error_code="invalid_payload",
+                status=400,
+                error_message="Le champ 'name' est requis.",
+            )
+
+        player.name = name.strip()
+        db.session.commit()
+
+        return _build_success_response(
+            _serialize_player(player),
+            message="Joueur mis à jour avec succès.",
+        )
+
     return app
 
 
